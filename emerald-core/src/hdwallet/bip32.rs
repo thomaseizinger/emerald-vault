@@ -64,9 +64,13 @@ impl HDPath {
             match s.parse::<u32>() {
                 Ok(v) => {
                     if is_hardened {
-                        res.push(ChildNumber::from_hardened_idx(v))
+                        res.push(ChildNumber::Hardened {
+                            index: v
+                        })
                     } else {
-                        res.push(ChildNumber::from_normal_idx(v))
+                        res.push(ChildNumber::Normal {
+                            index: v
+                        })
                     }
                 }
                 Err(e) => {
@@ -100,8 +104,8 @@ impl ops::Deref for HDPath {
 pub fn generate_key(path: &HDPath, seed: &[u8]) -> Result<PrivateKey, Error> {
     let secp = Secp256k1::new();
     let sk = ExtendedPrivKey::new_master(Network::Bitcoin, seed)
-        .and_then(|k| k.derive_priv(&secp, path.0.as_slice()))?;
-    let key = PrivateKey::try_from(&sk.secret_key[0..PRIVATE_KEY_BYTES])?;
+        .and_then(|k| k.derive_priv(&secp, &path.0))?;
+    let key = PrivateKey::try_from(&sk.private_key.key[0..PRIVATE_KEY_BYTES])?;
 
     Ok(key)
 }
@@ -171,10 +175,10 @@ mod test {
     fn parse_hdpath() {
         let parsed = HDPath::try_from("m/44'/60'/160720'/0'").unwrap();
         let exp = HDPath(vec![
-            ChildNumber::from_hardened_idx(44),
-            ChildNumber::from_hardened_idx(60),
-            ChildNumber::from_hardened_idx(160720),
-            ChildNumber::from_hardened_idx(0),
+            ChildNumber::from_hardened_idx(44).unwrap(),
+            ChildNumber::from_hardened_idx(60).unwrap(),
+            ChildNumber::from_hardened_idx(160720).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
         ]);
 
         assert_eq!(parsed, exp)
@@ -188,11 +192,11 @@ mod test {
             4dc6ee1d3e82a42dfe1b40fef6bcc3fd").unwrap();
 
         let path = vec![
-            ChildNumber::from_hardened_idx(44),
-            ChildNumber::from_hardened_idx(60),
-            ChildNumber::from_hardened_idx(160720),
-            ChildNumber::from_hardened_idx(0),
-            ChildNumber::from_normal_idx(0),
+            ChildNumber::from_hardened_idx(44).unwrap(),
+            ChildNumber::from_hardened_idx(60).unwrap(),
+            ChildNumber::from_hardened_idx(160720).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
+            ChildNumber::from_normal_idx(0).unwrap(),
         ];
 
         let priv_key = generate_key(&HDPath(path), &seed).unwrap();
@@ -208,10 +212,10 @@ mod test {
         516661c63a3e700fb4b995a7173ad0987ffcec7aa1ddb6bbdd2d2299b9ed23cce5d514b4986").unwrap();
 
         let path = vec![
-            ChildNumber::from_hardened_idx(44),
-            ChildNumber::from_hardened_idx(60),
-            ChildNumber::from_hardened_idx(0),
-            ChildNumber::from_normal_idx(1),
+            ChildNumber::from_hardened_idx(44).unwrap(),
+            ChildNumber::from_hardened_idx(60).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
+            ChildNumber::from_normal_idx(1).unwrap(),
         ];
 
         let priv_key = generate_key(&HDPath(path), &seed).unwrap();
