@@ -23,6 +23,7 @@ use hex;
 use jsonrpc_core;
 use crate::keystore;
 use crate::mnemonic;
+#[cfg(feature = "http")]
 use reqwest;
 use serde_json;
 use std::{error, fmt, io};
@@ -30,6 +31,7 @@ use std::{error, fmt, io};
 /// JSON RPC errors
 #[derive(Debug)]
 pub enum Error {
+    #[cfg(feature = "http")]
     /// Http client error
     HttpClient(reqwest::Error),
     /// RPC error
@@ -64,6 +66,7 @@ impl From<io::Error> for Error {
     }
 }
 
+#[cfg(feature = "http")]
 impl From<reqwest::Error> for Error {
     fn from(err: reqwest::Error) -> Self {
         Error::HttpClient(err)
@@ -127,6 +130,7 @@ impl Into<jsonrpc_core::Error> for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            #[cfg(feature = "http")]
             Error::HttpClient(ref err) => write!(f, "HTTP client error: {}", err),
             Error::RPC(ref err) => write!(f, "RPC error: {:?}", err),
             Error::InvalidDataFormat(ref str) => write!(f, "Invalid data format: {}", str),
@@ -145,6 +149,7 @@ impl error::Error for Error {
 
     fn cause(&self) -> Option<&error::Error> {
         match *self {
+            #[cfg(feature = "http")]
             Error::HttpClient(ref err) => Some(err),
             _ => None,
         }

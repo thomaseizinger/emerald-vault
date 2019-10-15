@@ -19,10 +19,12 @@ limitations under the License.
 /// * backed with `db`
 /// * plain filesystem
 ///
+#[cfg(feature = "rocksdb-storage")]
 mod db;
 mod error;
 mod fs;
 
+#[cfg(feature = "rocksdb-storage")]
 pub use self::db::DbStorage;
 pub use self::error::KeystoreError;
 pub use self::fs::FsStorage;

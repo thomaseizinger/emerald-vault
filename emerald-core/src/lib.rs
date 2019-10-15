@@ -31,6 +31,7 @@ extern crate aes_ctr;
 extern crate bitcoin;
 extern crate byteorder;
 extern crate chrono;
+#[cfg(feature = "rocksdb-storage")]
 extern crate rocksdb;
 extern crate ethabi;
 extern crate glob;
@@ -43,6 +44,7 @@ extern crate num;
 extern crate pbkdf2;
 extern crate rand;
 extern crate regex;
+#[cfg(feature = "http")]
 extern crate reqwest;
 extern crate scrypt;
 extern crate secp256k1;

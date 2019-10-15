@@ -94,7 +94,7 @@ pub fn build_keyfile_storage<P>(path: P) -> Result<Box<KeyfileStorage>, Keystore
 where
     P: AsRef<Path>,
 {
-    #[cfg(feature = "default")]
+    #[cfg(feature = "rocksdb-storage")]
     {
         let mut p = PathBuf::new();
         p.push(path);
@@ -113,6 +113,8 @@ where
             "Can't create filesystem Keyfile storage".to_string(),
         )),
     }
+
+    unimplemented!("no storage activated")
 }
 
 /// Creates specific type of `Contract` storage (database or filesystem)

@@ -16,6 +16,7 @@ limitations under the License.
 //! # Errors for storage of `Keyfiles`
 
 use crate::keystore::SerializeError;
+#[cfg(feature = "rocksdb-storage")]
 use crate::rocksdb;
 use serde_json;
 
@@ -31,6 +32,7 @@ pub enum KeystoreError {
     NotFound(String),
 }
 
+#[cfg(feature = "rocksdb-storage")]
 impl From<rocksdb::Error> for KeystoreError {
     fn from(err: rocksdb::Error) -> Self {
         KeystoreError::StorageError(format!("Keyfile storage error: {}", err.to_string()))
