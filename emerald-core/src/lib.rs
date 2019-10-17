@@ -36,6 +36,7 @@ extern crate rocksdb;
 extern crate ethabi;
 extern crate glob;
 extern crate hex;
+#[cfg(feature = "hw-wallet")]
 extern crate hidapi;
 extern crate hmac;
 extern crate jsonrpc_core;

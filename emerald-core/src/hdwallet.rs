@@ -26,11 +26,9 @@ mod error;
 mod keystore;
 
 use self::apdu::ApduBuilder;
-use self::comm::sendrecv;
 pub use self::error::Error;
 pub use self::keystore::HdwalletCrypto;
 use super::{to_arr, Address, Signature, ECDSA_SIGNATURE_BYTES};
-use hidapi::{HidApi, HidDevice, HidDeviceInfo};
 use std::str::{from_utf8, FromStr};
 use std::{thread, time};
 use hex;
@@ -55,7 +53,8 @@ struct Device {
     ///
     address: Address,
     ///
-    hid_info: HidDeviceInfo,
+    #[cfg(feature = "hw-wallet")]
+    hid_info: hidapi::HidDeviceInfo,
 }
 
 impl PartialEq for Device {
@@ -64,8 +63,9 @@ impl PartialEq for Device {
     }
 }
 
-impl From<HidDeviceInfo> for Device {
-    fn from(hid_info: HidDeviceInfo) -> Self {
+#[cfg(feature = "hw-wallet")]
+impl From<hidapi::HidDeviceInfo> for Device {
+    fn from(hid_info: hidapi::HidDeviceInfo) -> Self {
         let info = hid_info.clone();
         Device {
             fd: hid_info.path,
@@ -78,7 +78,8 @@ impl From<HidDeviceInfo> for Device {
 /// `Wallet Manager` to handle all interaction with HD wallet
 pub struct WManager {
     /// HID point used for communication
-    hid: HidApi,
+    #[cfg(feature = "hw-wallet")]
+    hid: hdiapi::HidApi,
     /// List of available wallets
     devices: Vec<Device>,
     /// Derivation path
@@ -89,11 +90,20 @@ impl WManager {
     /// Creates new `Wallet Manager` with a specified
     /// derivation path
     pub fn new(hd_path: Option<Vec<u8>>) -> Result<WManager, Error> {
-        Ok(Self {
-            hid: HidApi::new()?,
-            devices: Vec::new(),
-            hd_path,
-        })
+
+        #[cfg(feature = "hw-wallet")]
+        {
+            Ok(Self {
+                hid: hdiapi::HidApi::new()?,
+                devices: Vec::new(),
+                hd_path,
+            })
+        }
+
+        #[cfg(not(feature = "hw-wallet"))]
+        {
+            Err(Error::HDWalletError("feature hw-wallet not activated".to_string()))
+        }
     }
 
     /// Decides what HD path to use
@@ -112,35 +122,44 @@ impl WManager {
     /// hd_path - optional HD path, prefixed with count of derivation indexes
     ///
     pub fn get_address(&self, fd: &str, hd_path: Option<Vec<u8>>) -> Result<Address, Error> {
-        let hd_path = self.pick_hd_path(hd_path)?;
 
-        let apdu = ApduBuilder::new(GET_ETH_ADDRESS)
-            .with_data(&hd_path)
-            .build();
+        #[cfg(feature = "hw-wallet")]
+        {
+            let hd_path = self.pick_hd_path(hd_path)?;
 
-        debug!("DEBUG get address: {:?}", &fd);
-        let handle = self.open(fd)?;
-        let addr = sendrecv(&handle, &apdu)
-            .and_then(|res| match res.len() {
-                107 => Ok(res),
-                _ => Err(Error::HDWalletError(
-                    "Address read returned invalid data length".to_string(),
-                )),
-            })
-            .and_then(|res: Vec<u8>| {
-                from_utf8(&res[67..107])
-                    .map(|ptr| ptr.to_string())
-                    .map_err(|e| {
+            let apdu = ApduBuilder::new(GET_ETH_ADDRESS)
+                .with_data(&hd_path)
+                .build();
+
+            debug!("DEBUG get address: {:?}", &fd);
+            let handle = self.open(fd)?;
+            let addr = crate::hdwallet::comm::sendrecv(&handle, &apdu)
+                .and_then(|res| match res.len() {
+                    107 => Ok(res),
+                    _ => Err(Error::HDWalletError(
+                        "Address read returned invalid data length".to_string(),
+                    )),
+                })
+                .and_then(|res: Vec<u8>| {
+                    from_utf8(&res[67..107])
+                        .map(|ptr| ptr.to_string())
+                        .map_err(|e| {
+                            Error::HDWalletError(format!("Can't parse address: {}", e.to_string()))
+                        })
+                })
+                .and_then(|s| {
+                    Address::from_str(&s).map_err(|e| {
                         Error::HDWalletError(format!("Can't parse address: {}", e.to_string()))
                     })
-            })
-            .and_then(|s| {
-                Address::from_str(&s).map_err(|e| {
-                    Error::HDWalletError(format!("Can't parse address: {}", e.to_string()))
-                })
-            })?;
+                })?;
 
-        Ok(addr)
+            Ok(addr)
+        }
+
+        #[cfg(not(feature = "hw-wallet"))]
+        {
+            Err(Error::HDWalletError("feature hw-wallet not activated".to_string()))
+        }
     }
 
     /// Sign data
@@ -172,42 +191,51 @@ impl WManager {
         tr: &[u8],
         hd_path: Option<Vec<u8>>,
     ) -> Result<Signature, Error> {
-        let hd_path = self.pick_hd_path(hd_path)?;
 
-        let _mock = Vec::new();
-        let (init, cont) = match tr.len() {
-            0...CHUNK_SIZE => (tr, _mock.as_slice()),
-            _ => tr.split_at(CHUNK_SIZE - hd_path.len()),
-        };
+        #[cfg(feature = "hw-wallet")]
+        {
+            let hd_path = self.pick_hd_path(hd_path)?;
 
-        let init_apdu = ApduBuilder::new(SIGN_ETH_TRANSACTION)
-            .with_p1(0x00)
-            .with_data(&hd_path)
-            .with_data(init)
-            .build();
+            let _mock = Vec::new();
+            let (init, cont) = match tr.len() {
+                0...CHUNK_SIZE => (tr, _mock.as_slice()),
+                _ => tr.split_at(CHUNK_SIZE - hd_path.len()),
+            };
 
-        let handle = self.open(fd)?;
-        let mut res = sendrecv(&handle, &init_apdu)?;
-
-        for chunk in cont.chunks(CHUNK_SIZE) {
-            let apdu_cont = ApduBuilder::new(SIGN_ETH_TRANSACTION)
-                .with_p1(0x80)
-                .with_data(chunk)
+            let init_apdu = ApduBuilder::new(SIGN_ETH_TRANSACTION)
+                .with_p1(0x00)
+                .with_data(&hd_path)
+                .with_data(init)
                 .build();
-            res = sendrecv(&handle, &apdu_cont)?;
-        }
-        debug!("Received signature: {:?}", hex::encode(&res));
-        match res.len() {
-            ECDSA_SIGNATURE_BYTES => {
-                let mut val: [u8; ECDSA_SIGNATURE_BYTES] = [0; ECDSA_SIGNATURE_BYTES];
-                val.copy_from_slice(&res);
 
-                Ok(Signature::from(val))
+            let handle = self.open(fd)?;
+            let mut res = sendrecv(&handle, &init_apdu)?;
+
+            for chunk in cont.chunks(CHUNK_SIZE) {
+                let apdu_cont = ApduBuilder::new(SIGN_ETH_TRANSACTION)
+                    .with_p1(0x80)
+                    .with_data(chunk)
+                    .build();
+                res = sendrecv(&handle, &apdu_cont)?;
             }
-            v => Err(Error::HDWalletError(format!(
-                "Invalid signature length. Expected: {}, received: {}",
-                ECDSA_SIGNATURE_BYTES, v
-            ))),
+            debug!("Received signature: {:?}", hex::encode(&res));
+            match res.len() {
+                ECDSA_SIGNATURE_BYTES => {
+                    let mut val: [u8; ECDSA_SIGNATURE_BYTES] = [0; ECDSA_SIGNATURE_BYTES];
+                    val.copy_from_slice(&res);
+
+                    Ok(Signature::from(val))
+                }
+                v => Err(Error::HDWalletError(format!(
+                    "Invalid signature length. Expected: {}, received: {}",
+                    ECDSA_SIGNATURE_BYTES, v
+                ))),
+            }
+        }
+
+        #[cfg(not(feature = "hw-wallet"))]
+        {
+            Err(Error::HDWalletError("feature hw-wallet not activated".to_string()))
         }
     }
 
@@ -223,25 +251,30 @@ impl WManager {
     pub fn update(&mut self, hd_path: Option<Vec<u8>>) -> Result<(), Error> {
         let hd_path = self.pick_hd_path(hd_path)?;
 
-        self.hid.refresh_devices();
-        let mut new_devices = Vec::new();
+        #[cfg(feature = "hw-wallet")]
+        {
+            self.hid.refresh_devices();
 
-        debug!("Start searching for devices: {:?}", self.hid.devices());
-        for hid_info in self.hid.devices() {
-            if hid_info.product_id != LEDGER_PID || hid_info.vendor_id != LEDGER_VID {
-                continue;
+            let mut new_devices = Vec::new();
+
+            debug!("Start searching for devices: {:?}", self.hid.devices());
+            for hid_info in self.hid.devices() {
+                if hid_info.product_id != LEDGER_PID || hid_info.vendor_id != LEDGER_VID {
+                    continue;
+                }
+                let mut d = Device::from(hid_info);
+                d.address = self.get_address(&d.fd, Some(hd_path.clone()))?;
+                new_devices.push(d);
             }
-            let mut d = Device::from(hid_info);
-            d.address = self.get_address(&d.fd, Some(hd_path.clone()))?;
-            new_devices.push(d);
+            self.devices = new_devices;
+            debug!("Devices found {:?}", self.devices);
         }
-        self.devices = new_devices;
-        debug!("Devices found {:?}", self.devices);
 
         Ok(())
     }
 
-    fn open(&self, path: &str) -> Result<HidDevice, Error> {
+    #[cfg(feature = "hw-wallet")]
+    fn open(&self, path: &str) -> Result<hidapi::HidDevice, Error> {
         for _ in 0..5 {
             if let Ok(h) = self.hid.open(LEDGER_VID, LEDGER_PID) {
                 return Ok(h);

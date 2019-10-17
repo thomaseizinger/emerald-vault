@@ -19,7 +19,6 @@ limitations under the License.
 use super::apdu::APDU;
 use super::error::Error;
 use super::to_arr;
-use super::HidDevice;
 use log;
 use std::cmp::min;
 use std::mem::size_of_val;
@@ -106,8 +105,8 @@ fn sw_to_error(sw_h: u8, sw_l: u8) -> Result<(), Error> {
     }
 }
 
-///
-pub fn sendrecv(dev: &HidDevice, apdu: &APDU) -> Result<Vec<u8>, Error> {
+#[cfg(feature = "hw-wallet")]
+pub fn sendrecv(dev: &hidapi::HidDevice, apdu: &APDU) -> Result<Vec<u8>, Error> {
     let mut frame_index: usize = 0;
     let mut data_itr = apdu.data.iter();
     let mut init_sent = false;
